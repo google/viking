@@ -19,6 +19,9 @@ from viking_jax import viking_jax
 VikingStreamState = viking_jax.VikingStreamState
 VikingCell = viking_jax.VikingCell
 VikingGenerator = viking_jax.VikingGenerator
+VikingModel = viking_jax.VikingModel
+VikingAudioModel = viking_jax.VikingAudioModel
+VikingParams = viking_jax.VikingParams
 hann_window = viking_jax.hann_window
 hamming_window = viking_jax.hamming_window
 design_prototype_filter = viking_jax.design_prototype_filter
@@ -26,14 +29,24 @@ convert_fir_taps_to_min_phase_jax = viking_jax.convert_fir_taps_to_min_phase_jax
 low_latency_analysis_filterbank = viking_jax.low_latency_analysis_filterbank
 low_latency_synthesis_filterbank = viking_jax.low_latency_synthesis_filterbank
 
+try:
+  from hp_acoustic.models import audio_model as _audio_model_lib
+except ImportError:
+  pass
+else:
+  _audio_model_lib.register_model('viking', VikingModel.from_config)
+
 __all__ = [
-    "VikingStreamState",
-    "VikingCell",
-    "VikingGenerator",
-    "hann_window",
-    "hamming_window",
-    "design_prototype_filter",
-    "convert_fir_taps_to_min_phase_jax",
-    "low_latency_analysis_filterbank",
-    "low_latency_synthesis_filterbank",
+  "VikingStreamState",
+  "VikingCell",
+  "VikingGenerator",
+  "VikingModel",
+  "VikingAudioModel",
+  "VikingParams",
+  "hann_window",
+  "hamming_window",
+  "design_prototype_filter",
+  "convert_fir_taps_to_min_phase_jax",
+  "low_latency_analysis_filterbank",
+  "low_latency_synthesis_filterbank",
 ]

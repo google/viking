@@ -22,9 +22,13 @@ Reference:
   Hearables" (arXiv:2409.18239).
 """
 
+import dataclasses
 import math
-from typing import Callable
+from collections.abc import Callable
+from collections.abc import Mapping
+from typing import Any
 
+import flax.core
 import flax.linen as nn
 import flax.struct
 import jax
@@ -670,3 +674,83 @@ class VikingGenerator(nn.Module):
           overlap_buffer=next_overlap_buf,
       )
       return next_state, out_chunk[..., None]
+
+
+VikingParams = flax.core.FrozenDict[str, Any]
+
+# Trace shape `(batch, samples, channels)`; parameter shapes depend only on
+# subband/bin count and RNN dimensions, not on `batch` or `samples`.
+_INIT_SHAPE: tuple[int, int, int] = (1, 1024, 1)
+
+_VIKING_GENERATOR_FIELDS: tuple[str, ...] = (
+    'frame_length',
+    'frame_step',
+    'use_low_latency_filterbanks',
+    'shift_factor',
+    'num_subbands',
+    'prototype_filter_length',
+    'convert_to_min_phase',
+    'num_taps',
+    'num_parallel',
+    'lstm_depth',
+    'lstm_units',
+    'hub_units',
+    'in_magnitude_compression',
+    'max_mask_gain',
+    'init_mask_gain',
+)
+
+
+@dataclasses.dataclass(frozen=True)
+class VikingModel:
+  """Adapts `VikingGenerator` to `hp_acoustic`'s `AudioModel` protocol."""
+
+  module: VikingGenerator = dataclasses.field(default_factory=VikingGenerator)
+  init_shape: tuple[int, int, int] = _INIT_SHAPE
+
+  @property
+  def name(self) -> str:
+    return 'viking'
+
+  def init(self, rng: jax.Array) -> VikingParams:
+    sample_input = jnp.zeros(self.init_shape, dtype=jnp.float32)
+    return self.module.init(rng, sample_input, train=False)['params']
+
+  def apply(self, params: VikingParams, audio: jnp.ndarray) -> jnp.ndarray:
+    return jnp.asarray(
+        self.module.apply({'params': params}, audio, train=False)
+    )
+
+  def constrain(self, params: VikingParams) -> VikingParams:
+    """Viking has no post-update parameter constraints (pass-through)."""
+    return params
+
+  def get_config(self) -> Mapping[str, object]:
+    """Serializes model architecture configuration for checkpointing."""
+    config: dict[str, object] = {
+        'name': self.name,
+        'init_shape': tuple(self.init_shape),
+    }
+    for field_name in _VIKING_GENERATOR_FIELDS:
+      config[field_name] = getattr(self.module, field_name)
+    return config
+
+  @classmethod
+  def from_config(cls, config: Mapping[str, object]) -> 'VikingModel':
+    """Constructs a `VikingModel` from a configuration dictionary."""
+    gen_kwargs: dict[str, Any] = {
+        k: config[k] for k in _VIKING_GENERATOR_FIELDS if k in config
+    }
+    module = VikingGenerator(**gen_kwargs)
+
+    init_shape = _INIT_SHAPE
+    if 'init_shape' in config:
+      raw_shape = config['init_shape']
+      if not isinstance(raw_shape, (list, tuple)) or len(raw_shape) != 3:
+        raise ValueError(f'Expected init_shape of length 3, got {raw_shape!r}')
+      init_shape = (int(raw_shape[0]), int(raw_shape[1]), int(raw_shape[2]))
+
+    return cls(module=module, init_shape=init_shape)
+
+
+VikingAudioModel = VikingModel

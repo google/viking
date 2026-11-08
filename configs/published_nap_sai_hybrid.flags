@@ -1,0 +1,38 @@
+# Hybrid NAP L1 + SAI SSIM DAL configuration (arXiv:2606.04103 Tables C & D).
+# Pairs linear-phase filterbank synthesis with pointwise NAP alignment + SAI SSIM.
+
+--num_analysis_clips=-1
+
+--global_batch_size=32
+--training_example_seconds=0.512
+--max_epochs=20
+--max_steps=5000
+
+--learning_rate=0.0005
+--beta1=0.5
+--beta2=0.9
+
+--lambda_l1_waveform=0.0
+--lambda_l1_nap=1.0
+--lambda_ssim=1.0
+--lambda_pnd_sai=0.0
+--lambda_drift=2.0
+--ssim_timewinsz=36
+--ssim_chanwinsz=6
+
+--impaired_ohc_health=0.5
+
+# Linear-phase STFT/FIR mode for temporal fine-structure alignment
+--use_low_latency_filterbanks=false
+--frame_length=256
+--frame_step=16
+--num_parallel=4
+--lstm_depth=2
+--lstm_units=32
+--hub_units=8
+--in_magnitude_compression=0.3
+--max_mask_gain=20.0
+--init_mask_gain=2.5
+
+--checkpoint_step_freq=150
+--num_val_examples=50

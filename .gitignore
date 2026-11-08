@@ -1,0 +1,22 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments & caches
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Local sibling repositories
+/carfac/
+/hp-acoustic/
+/jax-haspi-hasqi/
+/seanet/
+/shaca/
+
+# OS files
+.DS_Store

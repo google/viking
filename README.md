@@ -118,6 +118,42 @@ chunk = jnp.zeros((1, model.shift_factor, 1))
 state, out_chunk = step_fn(state, chunk)  # out_chunk shape: (1, 64, 1)
 ```
 
+### Differentiable Auditory Loop (DAL / `hp_acoustic`) Integration
+
+`VikingModel` (alias `VikingAudioModel`) adapts `VikingGenerator` to the
+`hp_acoustic.models.audio_model.AudioModel` protocol for end-to-end CARFAC
+cochlear restoration training and evaluation:
+
+```python
+import jax
+import jax.numpy as jnp
+from viking_jax import VikingGenerator, VikingModel
+
+model = VikingModel(
+    module=VikingGenerator(
+        use_low_latency_filterbanks=True,
+        convert_to_min_phase=True,
+        shift_factor=32,
+        num_subbands=256,
+        prototype_filter_length=256,
+        num_taps=128,
+        init_mask_gain=1.8,
+    )
+)
+params = model.init(jax.random.PRNGKey(0))
+aided_audio = model.apply(params, jnp.zeros((2, 16000, 1)))
+```
+
+End-to-end CARFAC DAL training, evaluation, streaming inference, and
+head-to-head comparison benchmarks (Unprocessed vs. SHACA vs. Viking vs. SEANet)
+are provided in `viking_jax.scripts`:
+
+```bash
+python -m viking_jax.scripts.train --flagfile=configs/smoke_cpu.flags
+python -m viking_jax.scripts.benchmark_dal --max_steps=5
+python -m viking_jax.scripts.generate_comparison_figures --output_dir=figures
+```
+
 ## Authors and Acknowledgments
 
 This JAX/Flax implementation and its hearing-aid extensions were developed by
