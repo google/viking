@@ -30,16 +30,17 @@ includes extensions for hearing-aid speech enhancement and amplification:
     per-frame linear-phase synthesis FIR taps to minimum phase via the real
     cepstrum and causal Hilbert-transform window, concentrating filter energy
     near tap 0 to achieve sub-millisecond algorithmic latency.
-- **Hearing-Aid Amplification Masks (`max_mask_gain`)**:
+- **Hearing-Aid Amplification Masks (`max_mask_gain`, `init_mask_gain`)**:
   - Whereas standard denoising models restrict subband masks to `(0, 1)`,
     `VikingCell` and `VikingGenerator` parameterize the output mask as
     `max_mask_gain * sigmoid(logits)` (default `max_mask_gain = 20.0`).
   - This allows the model to apply frequency-dependent insertion gain
     (amplification above `1.0`) alongside noise suppression.
-  - When `max_mask_gain > 1.0`, the mask projection bias is initialized to
-    `-log(max_mask_gain - 1.0)` so that an unperturbed network starts at unity
-    gain (`1.0`) across all subbands. Setting `max_mask_gain = 1.0` recovers a
-    standard `(0, 1)` suppression mask.
+  - When `max_mask_gain > 1.0` and `0 < init_mask_gain < max_mask_gain`, the
+    mask projection bias is initialized to
+    `-log(max_mask_gain / init_mask_gain - 1.0)` so that an unperturbed network
+    starts at `init_mask_gain` (default `1.0` unity gain) across all subbands.
+    Setting `max_mask_gain = 1.0` recovers a standard `(0, 1)` suppression mask.
 - **Multi-Layer Stacked Parallel RNN with Inter-Layer Hubs (`lstm_depth`)**:
   - Splits the frequency bins across `num_parallel` independent LSTM branches
     per layer (`lstm_units` per branch) to keep parameter count and MACs small.
