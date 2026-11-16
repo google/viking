@@ -263,11 +263,24 @@ class VikingJaxTest(absltest.TestCase):
     self.assertTrue(jnp.all(jnp.isfinite(spec)))
 
     unity_mask = jnp.ones_like(spec)
-    y_audio = viking_jax.low_latency_synthesis_filterbank(
-        x_audio, prototype_filter, unity_mask, hparams
-    )
-    self.assertEqual(y_audio.shape, (batch, samples))
-    self.assertTrue(jnp.all(jnp.isfinite(y_audio)))
+    for convert_to_min_phase in (False, True):
+      hp = viking_jax.VikingGenerator(
+          use_low_latency_filterbanks=True,
+          shift_factor=shift,
+          num_subbands=filter_len,
+          prototype_filter_length=filter_len,
+          num_taps=filter_len // 2,
+          convert_to_min_phase=convert_to_min_phase,
+      )
+      y_audio = viking_jax.low_latency_synthesis_filterbank(
+          x_audio, prototype_filter, unity_mask, hp
+      )
+      self.assertEqual(y_audio.shape, (batch, samples))
+      self.assertTrue(jnp.all(jnp.isfinite(y_audio)))
+      # Interior samples under a unity mask should preserve unit RMS scale.
+      in_rms = jnp.sqrt(jnp.mean(x_audio[:, filter_len:] ** 2))
+      out_rms = jnp.sqrt(jnp.mean(y_audio[:, filter_len:] ** 2))
+      self.assertAlmostEqual(float(out_rms / in_rms), 1.0, delta=0.1)
 
   def test_viking_cell(self):
     batch = 2
@@ -333,6 +346,18 @@ class VikingJaxTest(absltest.TestCase):
     vars_1 = cell_1.init(jax.random.PRNGKey(9), carry, x_zero)
     _, mask_1 = cell_1.apply(vars_1, carry, x_zero)
     self.assertTrue(jnp.allclose(mask_1, 0.5, atol=1e-5))
+
+    cell_warm = viking_jax.VikingCell(
+        lstm_units=lstm_units,
+        hub_units=hub_units,
+        num_bins=num_bins,
+        num_parallel=num_parallel,
+        max_mask_gain=20.0,
+        init_mask_gain=2.5,
+    )
+    vars_warm = cell_warm.init(jax.random.PRNGKey(9), carry, x_zero)
+    _, mask_warm = cell_warm.apply(vars_warm, carry, x_zero)
+    self.assertTrue(jnp.allclose(mask_warm, 2.5, atol=1e-5))
 
   def test_viking_generator_shapes_and_gradients(self):
     batch = 2

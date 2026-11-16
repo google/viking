@@ -164,10 +164,9 @@ def _compute_synthesis_fir_taps(
     FIR filter taps of shape `[..., new_filter_len]`.
   """
   filter_len = hparams.prototype_filter_length
-  shift = hparams.shift_factor
   subbands = hparams.num_subbands
 
-  filters = jnp.fft.irfft(mask, filter_len) * subbands / jnp.sqrt(shift)
+  filters = jnp.fft.irfft(mask, filter_len) * subbands
   filters = jnp.concatenate([filters, filters], axis=-1)
   filter_index = filter_len // 2
   filters = filters[..., filter_index:-filter_index] * prototype_filter
@@ -245,7 +244,6 @@ def low_latency_synthesis_filterbank(
   shift = hparams.shift_factor
 
   filters = _compute_synthesis_fir_taps(mask, prototype_filter, hparams)
-  new_filter_len = filters.shape[-1]
 
   # Shifting frames for crossfading (crossfading f_{t-1} to f_t)
   filters_old = jnp.pad(filters[:, :-1, :], ((0, 0), (1, 0), (0, 0)))
@@ -278,11 +276,7 @@ def low_latency_synthesis_filterbank(
   filtered_old = fft_conv(filters_old, frames)
   filtered_new = fft_conv(filters_new, frames)
 
-  if hparams.convert_to_min_phase:
-    complete_overlap_start = filter_len - shift
-  else:
-    complete_overlap_start = new_filter_len // 2 - 1
-
+  complete_overlap_start = filter_len - shift
   complete_overlap_end = complete_overlap_start + shift
 
   # Crossfading Window
@@ -310,6 +304,7 @@ class VikingCell(nn.Module):
   num_parallel: int
   lstm_depth: int = 1
   max_mask_gain: float = 20.0
+  init_mask_gain: float = 1.0
 
   @nn.compact
   def __call__(self, carry, x_t):
@@ -357,10 +352,14 @@ class VikingCell(nn.Module):
     hub = nn.tanh(nn.Dense(self.hub_units, name='hub')(concat_outputs))
     combined = jnp.concatenate([concat_outputs, hub], axis=-1)
 
-    # Final dense for mask logits (initialized at unity gain when > 1.0)
-    bias_init_val = (
-        -math.log(self.max_mask_gain - 1.0) if self.max_mask_gain > 1.0 else 0.0
-    )
+    # Final dense for mask logits (initialized at init_mask_gain when max_mask_gain > 1.0)
+    if (
+        self.max_mask_gain > 1.0
+        and 0.0 < self.init_mask_gain < self.max_mask_gain
+    ):
+      bias_init_val = -math.log(self.max_mask_gain / self.init_mask_gain - 1.0)
+    else:
+      bias_init_val = 0.0
     mask_logits = nn.Dense(
         self.num_bins,
         bias_init=nn.initializers.constant(bias_init_val),
@@ -393,6 +392,7 @@ class VikingGenerator(nn.Module):
   hub_units: int = 8
   in_magnitude_compression: float = 0.3
   max_mask_gain: float = 20.0
+  init_mask_gain: float = 1.0
 
   @nn.compact
   def __call__(self, x_audio, train: bool = False):
@@ -455,6 +455,7 @@ class VikingGenerator(nn.Module):
         num_parallel=self.num_parallel,
         lstm_depth=self.lstm_depth,
         max_mask_gain=self.max_mask_gain,
+        init_mask_gain=self.init_mask_gain,
     )
 
     def body_fn(cell, carry, x):
@@ -587,11 +588,11 @@ class VikingGenerator(nn.Module):
           num_parallel=self.num_parallel,
           lstm_depth=self.lstm_depth,
           max_mask_gain=self.max_mask_gain,
+          init_mask_gain=self.init_mask_gain,
       )
       next_carry, mask = viking_cell(stream_state.lstm_carry, spectrogram)
 
       filter_new = _compute_synthesis_fir_taps(mask, prototype_filter, self)
-      new_filter_len = filter_new.shape[-1]
 
       def fft_conv_1d(f, a):
         fft_len = f.shape[-1] + a.shape[-1] - 1
@@ -603,11 +604,7 @@ class VikingGenerator(nn.Module):
       filtered_old = fft_conv_1d(stream_state.filter_old, full_frame)
       filtered_new = fft_conv_1d(filter_new, full_frame)
 
-      if self.convert_to_min_phase:
-        complete_overlap_start = filter_len - shift
-      else:
-        complete_overlap_start = new_filter_len // 2 - 1
-
+      complete_overlap_start = filter_len - shift
       complete_overlap_end = complete_overlap_start + shift
       crossfade_window = jnp.arange(1, shift + 1, dtype=jnp.float32) / shift
 
@@ -646,6 +643,7 @@ class VikingGenerator(nn.Module):
           num_parallel=self.num_parallel,
           lstm_depth=self.lstm_depth,
           max_mask_gain=self.max_mask_gain,
+          init_mask_gain=self.init_mask_gain,
       )
       next_carry, mask = viking_cell(stream_state.lstm_carry, compressed_mag)
 
